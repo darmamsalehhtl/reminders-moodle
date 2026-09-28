@@ -15,7 +15,7 @@ export class ConfigError extends Error {
 
 /**
  * Masks a secret so it is safe to print/log, keeping only a short prefix
- * and suffix. "deadbeefdeadbeefdeadbeefdeadbeef" -> "7358…6802".
+ * and suffix. "deadbeefdeadbeefdeadbeefdeadbeef" -> "dead…beef".
  */
 export function redact(secret) {
   if (!secret) return '(unset)';

@@ -88,7 +88,7 @@ test('call() redacts the token out of error messages', async () => {
   });
   await assert.rejects(client.call('foo'), (err) => {
     assert.ok(!err.message.includes(TOKEN));
-    assert.match(err.message, /7358…6802/);
+    assert.match(err.message, /dead…beef/);
     return true;
   });
 });
