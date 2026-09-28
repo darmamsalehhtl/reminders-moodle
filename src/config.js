@@ -1,0 +1,94 @@
+import { config as loadDotenv } from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '..');
+
+/** Thrown for anything the user needs to fix (missing/invalid config, auth). */
+export class ConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}
+
+/**
+ * Masks a secret so it is safe to print/log, keeping only a short prefix
+ * and suffix. "deadbeefdeadbeefdeadbeefdeadbeef" -> "7358…6802".
+ */
+export function redact(secret) {
+  if (!secret) return '(unset)';
+  const s = String(secret);
+  if (s.length <= 8) return '****';
+  return `${s.slice(0, 4)}…${s.slice(-4)}`;
+}
+
+/**
+ * Strips any known secret values out of an arbitrary string, so error
+ * messages and stack traces can be logged/printed without leaking the
+ * Moodle token even if it ends up embedded in a URL or response body.
+ */
+export function scrub(text, secrets) {
+  let out = String(text ?? '');
+  for (const secret of secrets) {
+    if (!secret) continue;
+    out = out.split(secret).join(redact(secret));
+  }
+  return out;
+}
+
+function normalizeUrl(url) {
+  return url.replace(/\/+$/, '');
+}
+
+/**
+ * Loads and validates configuration from process.env (populated from .env
+ * via dotenv). Returns null fields instead of throwing where a value is
+ * merely optional (e.g. MOODLE_TOKEN before the first --login run).
+ */
+export function loadConfig({ envPath, env = process.env } = {}) {
+  loadDotenv({ path: envPath ?? path.join(projectRoot, '.env'), quiet: true });
+  const e = env;
+
+  const url = e.MOODLE_URL;
+  if (!url) {
+    throw new ConfigError(
+      'MOODLE_URL is not set. Copy .env.example to .env and fill it in.',
+    );
+  }
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ConfigError(`MOODLE_URL is not a valid URL: "${url}"`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new ConfigError(`MOODLE_URL must be http(s): "${url}"`);
+  }
+
+  const token = e.MOODLE_TOKEN || null;
+  const userId = e.MOODLE_USER_ID ? Number(e.MOODLE_USER_ID) : null;
+  if (e.MOODLE_USER_ID && !Number.isInteger(userId)) {
+    throw new ConfigError(`MOODLE_USER_ID must be an integer: "${e.MOODLE_USER_ID}"`);
+  }
+
+  const soonDays = e.SOON_DAYS ? Number(e.SOON_DAYS) : 3;
+  const lookaheadDays = e.LOOKAHEAD_DAYS ? Number(e.LOOKAHEAD_DAYS) : 30;
+  const remindersList = e.REMINDERS_LIST || 'Schulaufgaben';
+
+  return {
+    moodleUrl: normalizeUrl(url),
+    token,
+    userId,
+    icalUrl: e.MOODLE_ICAL_URL || null,
+    soonDays,
+    lookaheadDays,
+    remindersList,
+    envPath: envPath ?? path.join(projectRoot, '.env'),
+    /** All secret values that must never be printed verbatim. */
+    secrets: [token].filter(Boolean),
+  };
+}
+
+export { projectRoot };
