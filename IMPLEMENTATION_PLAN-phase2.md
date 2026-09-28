@@ -413,3 +413,35 @@ empirically on the first real run. If `edu` turns out to be the one that
 matters and consent is refused, nothing else in the phase is wasted — the
 aggregation, clustering, state migration and renderer all work the same for
 two providers as for four.
+
+---
+
+## 14. Fallback if app registration is blocked (`ms-ical` provider)
+
+Many school tenants disable `usersCanRegisterApplications` for students. That
+cannot be checked from outside; the user verifies it at
+entra.microsoft.com -> App registrations -> New registration. If it is
+blocked, **every** Graph provider above is unavailable and no amount of code
+changes that.
+
+There is still one admin-free path, and it reuses infrastructure phase 1
+already has. Teams assignments created with `addToCalendarAction` set land in
+the student's Outlook calendar, and Outlook can publish a calendar as an
+`.ics` URL (Outlook web -> Settings -> Calendar -> Shared calendars ->
+Publish a calendar -> ICS link). That URL is an ordinary iCal feed, so:
+
+- New provider `ms-ical`, config `MS_ICAL_URL`.
+- It reuses `src/moodle/ical.js`'s parser **unchanged** — the VEVENT parsing,
+  line unfolding, escape decoding, DATE vs DATE-TIME handling and TZID
+  passthrough are already built and tested. Only the course-name heuristic
+  differs (Outlook puts the class name in the event title, not `CATEGORIES`),
+  so pass a provider-specific `guessCourse` and keep `courseGuessed: true`.
+- Implementation cost: roughly one file and one fixture.
+
+Honest limitations, which is why this is a fallback and not the plan: it only
+contains assignments whose teacher enabled the calendar option, it has no
+submission state (so a handed-in assignment keeps showing until its due date
+passes), and if the admin has disabled calendar publishing it is gone too.
+
+Priority for the implementer: build `ms-ical` **only** if the registration
+check comes back blocked. Otherwise skip section 14 entirely.
