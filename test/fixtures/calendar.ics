@@ -1,0 +1,28 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Moodle//NONSGML Moodle Version 4.5//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:abc-123-mathe@edufs.edu.htl-leonding.ac.at
+DTSTAMP:20260928T120000Z
+DTSTART:20260927T220000Z
+SUMMARY:Mathematik: Hausaufgabe 5 f\, r Sch\;ler\, mit Sonderzeichen \n u
+ nd langer Zeile
+DESCRIPTION:Bitte alle Aufgaben bis zur Deadline abgeben.\nZweite Zeile mit Umlauten: Übung.
+URL:https://edufs.edu.htl-leonding.ac.at/moodle/mod/assign/view.php?id=999
+CATEGORIES:4AHIF Mathematik
+END:VEVENT
+BEGIN:VEVENT
+UID:def-456-englisch@edufs.edu.htl-leonding.ac.at
+DTSTAMP:20260928T120000Z
+DTSTART;TZID=Europe/Vienna:20260930T080000
+SUMMARY:English: Essay Abgabe (4AHIF English)
+DESCRIPTION:
+END:VEVENT
+BEGIN:VEVENT
+UID:ghi-789-projekttag@edufs.edu.htl-leonding.ac.at
+DTSTAMP:20260928T120000Z
+DTSTART;VALUE=DATE:20261005
+SUMMARY:Projekttag Informatik
+END:VEVENT
+END:VCALENDAR
