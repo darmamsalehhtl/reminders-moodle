@@ -1,0 +1,26 @@
+{
+  "name": "moodle-task-fetcher",
+  "version": "0.1.0",
+  "description": "Fetches open assignments from a Moodle server and syncs them into macOS Reminders.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "moodle-tasks": "./bin/moodle-tasks.js"
+  },
+  "scripts": {
+    "start": "node bin/moodle-tasks.js",
+    "test": "node --test test/",
+    "schedule": "node src/schedule/cron.js",
+    "schedule:install": "bash launchd/install.sh"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.5"
+  },
+  "license": "UNLICENSED"
+}
