@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for the launchd agent that runs moodle-tasks daily. Placeholders
+  (__NODE_PATH__, __SCRIPT_PATH__, __WORKDIR__, __LOG_PATH__) are filled in
+  by launchd/install.sh, which knows the actual paths on this machine -
+  they can't be hardcoded here since `node` and the project live wherever
+  the user installed them.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.moodle-task-fetcher</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE_PATH__</string>
+    <string>__SCRIPT_PATH__</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__WORKDIR__</string>
+
+  <!-- Runs once a day at 08:00. launchd catches up a missed run (e.g. the
+       Mac was asleep at 08:00) the next time it wakes, it does not skip it. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__LOG_PATH__/moodle-tasks.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_PATH__/moodle-tasks.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
