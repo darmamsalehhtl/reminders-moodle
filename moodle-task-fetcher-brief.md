@@ -22,8 +22,8 @@ Ein CLI-Tool (Command-Line Interface) entwickeln, das:
 ### **Moodle-Konfiguration**
 ```
 Moodle URL: https://edufs.edu.htl-leonding.ac.at/moodle
-RSS Token: <REDACTED-TOKEN>
-User-ID: <REDACTED-USER-ID>
+RSS Token: <REDACTED - see .env.example, use `--login` to mint your own>
+User-ID: <REDACTED - filled in automatically by `--login`>
 ```
 
 ### **RSS-Feed-Struktur**
