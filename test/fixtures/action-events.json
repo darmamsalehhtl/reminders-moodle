@@ -1,0 +1,22 @@
+{
+  "events": [
+    {
+      "id": 12345,
+      "name": "Mathe Hausaufgabe 5",
+      "description": "<p>Bitte Aufgaben 1-4 bearbeiten &amp; hochladen.</p>",
+      "timesort": 1758844800,
+      "overdue": true,
+      "url": "https://edufs.edu.htl-leonding.ac.at/moodle/mod/assign/view.php?id=999",
+      "course": { "id": 10, "fullname": "4AHIF Mathematik" }
+    },
+    {
+      "id": 12346,
+      "name": "Englisch Essay",
+      "description": "",
+      "timesort": 1759190400,
+      "overdue": false,
+      "url": "https://edufs.edu.htl-leonding.ac.at/moodle/mod/assign/view.php?id=1000",
+      "course": { "id": 11, "fullname": "4AHIF English" }
+    }
+  ]
+}
