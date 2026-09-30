@@ -89,6 +89,29 @@ revert the submission and the task reappears, the reminder is reopened.
 Needs the web service source (not iCal); `--doctor` shows whether the two
 required functions are available, `--dry-run` shows what would be ticked off.
 
+## Smarter reminders
+
+Every synced reminder gets:
+
+- an **alarm** `ALARM_LEAD_HOURS` (default 24) before it is due, so macOS
+  actually notifies you (overdue and undated tasks get none),
+- a **priority**: high when overdue or due within `SOON_DAYS`, medium within
+  a week, none otherwise - it is refreshed as the deadline approaches,
+- a **course tag** in the title, e.g. `[4AHIF Mathematik] Hausaufgabe 5`
+  (turn off with `COURSE_PREFIX=0`; switching it updates existing
+  reminders once).
+
+After a real sync you also get one **digest notification**
+("3 offen, 1 überfällig · Nächste: HÜ 5 (in 2 Tagen)"); disable it with
+`DIGEST=0` or `--no-digest`.
+
+Hide courses or tasks you don't care about with `IGNORE_COURSES` and
+`IGNORE_TITLES` (comma-separated substrings, case-insensitive). Ignored tasks
+are never synced and never mistaken for handed-in ones.
+
+`node bin/moodle-tasks.js --status` shows how many tasks are tracked, open,
+ticked off and deleted, and when the last sync happened.
+
 ## Daily automation
 
 ```bash
@@ -154,8 +177,11 @@ src/render/terminal.js     boxed terminal output
 src/render/json.js         --json output
 src/reminders/jxa.js       JXA bridge to Reminders.app (list/create/update)
 src/reminders/sync.js      pure create/update/skip/deleted-by-user planner
+src/reminders/policy.js    alarm time, priority and title prefix rules
 src/state/store.js         atomic JSON state file for dedupe tracking
 src/notify.js              macOS notification banner
+src/digest.js              one-line summary for the digest notification
+src/status.js              --status summary of the state file
 src/schedule/cron.js       node-cron fallback scheduler
 launchd/                   recommended daily-run scheduling
 test/                      node:test unit tests + fixtures
