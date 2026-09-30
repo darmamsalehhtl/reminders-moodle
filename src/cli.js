@@ -15,6 +15,7 @@ import { findReminderIds } from './reminders/jxa.js';
 import { loadState, saveState } from './state/store.js';
 import { notify } from './notify.js';
 import { buildDigest } from './digest.js';
+import { summarizeState } from './status.js';
 
 /** Exit codes, documented in the plan: 0 ok, 1 unexpected, 2 config/auth, 3 network. */
 export const EXIT = { OK: 0, UNEXPECTED: 1, CONFIG: 2, NETWORK: 3 };
@@ -216,6 +217,19 @@ function writeEnvValue(envPath, key, value) {
   writeFileSync(envPath, next.join('\n'), { mode: 0o600 });
 }
 
+async function runStatus() {
+  const cfg = loadConfig();
+  const s = summarizeState(await loadState());
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('de-AT') : '–');
+  console.log(`Reminders-Liste:        ${cfg.remindersList}`);
+  console.log(`Verfolgte Aufgaben:     ${s.tracked}`);
+  console.log(`  offen:                ${s.active}`);
+  console.log(`  abgehakt (abgegeben): ${s.completed}`);
+  console.log(`  von dir gelöscht:     ${s.deletedByUser}`);
+  console.log(`Letzter Sync:           ${when(s.lastSyncedAt)}`);
+  console.log(`Zuletzt abgehakt:       ${when(s.lastCompletedAt)}`);
+}
+
 async function runDoctor() {
   const cfg = loadConfig();
   console.log(`MOODLE_URL:      ${cfg.moodleUrl}`);
@@ -269,11 +283,14 @@ export function buildProgram() {
     .option('--no-color', 'disable colored output')
     .option('--no-digest', 'do not show the summary notification after syncing')
     .option('--login', 'interactively mint a new web service token')
+    .option('--status', 'show what has been synced, ticked off or deleted')
     .option('--doctor', 'run connectivity/token/permission diagnostics')
     .action(async (opts) => {
       try {
         if (opts.login) {
           await runLogin();
+        } else if (opts.status) {
+          await runStatus();
         } else if (opts.doctor) {
           await runDoctor();
         } else {
