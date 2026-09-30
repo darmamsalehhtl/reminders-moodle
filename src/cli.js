@@ -14,6 +14,7 @@ import { resolveModule, isSubmitted, FN_EVENT_BY_ID, FN_COURSE_MODULE, FN_SUBMIS
 import { findReminderIds } from './reminders/jxa.js';
 import { loadState, saveState } from './state/store.js';
 import { notify } from './notify.js';
+import { buildDigest } from './digest.js';
 
 /** Exit codes, documented in the plan: 0 ok, 1 unexpected, 2 config/auth, 3 network. */
 export const EXIT = { OK: 0, UNEXPECTED: 1, CONFIG: 2, NETWORK: 3 };
@@ -89,6 +90,13 @@ async function runFetch(opts) {
     }
   } else if (opts.sync !== false && process.platform !== 'darwin') {
     log('(Reminders-Sync übersprungen: nur unter macOS verfügbar.)');
+  }
+
+  // Daily summary banner. Skipped for read-only runs (--no-sync, --dry-run,
+  // --json) so only a real sync run produces a notification.
+  if (shouldSync && !opts.dryRun && !opts.json && opts.digest !== false && cfg.digest) {
+    const text = buildDigest(tasks, { soonDays });
+    if (text) await notify(text, { title: 'Deine Schulaufgaben' });
   }
 }
 
@@ -259,6 +267,7 @@ export function buildProgram() {
     .option('--sync-reminders', 'explicit sync (alias for the default behavior)')
     .option('--dry-run', 'print the reminder sync plan without changing anything')
     .option('--no-color', 'disable colored output')
+    .option('--no-digest', 'do not show the summary notification after syncing')
     .option('--login', 'interactively mint a new web service token')
     .option('--doctor', 'run connectivity/token/permission diagnostics')
     .action(async (opts) => {

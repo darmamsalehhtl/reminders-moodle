@@ -92,6 +92,7 @@ export function loadConfig({ envPath, env = process.env } = {}) {
     throw new ConfigError(`ALARM_LEAD_HOURS must be a non-negative number: "${e.ALARM_LEAD_HOURS}"`);
   }
   const coursePrefix = flag(e.COURSE_PREFIX, true);
+  const digest = flag(e.DIGEST, true);
   const ignoreCourses = list(e.IGNORE_COURSES);
   const ignoreTitles = list(e.IGNORE_TITLES);
 
@@ -105,6 +106,7 @@ export function loadConfig({ envPath, env = process.env } = {}) {
     remindersList,
     alarmLeadHours,
     coursePrefix,
+    digest,
     ignoreCourses,
     ignoreTitles,
     envPath: envPath ?? path.join(projectRoot, '.env'),
