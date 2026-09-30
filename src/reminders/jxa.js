@@ -97,10 +97,11 @@ export async function ensureList(name) {
 
 /**
  * Creates a reminder in the given list.
- * @param {{list: string, title: string, body?: string, dueMs?: number|null, url?: string|null}} params
+ * @param {{list: string, title: string, body?: string, dueMs?: number|null, url?: string|null,
+ *   priority?: number, remindMs?: number|null}} params
  * @returns {Promise<string>} the new reminder's persistent id
  */
-export async function createReminder({ list, title, body = '', dueMs = null, url = null }) {
+export async function createReminder({ list, title, body = '', dueMs = null, url = null, priority = 0, remindMs = null }) {
   return runJxa(
     `
     const Reminders = Application('Reminders');
@@ -111,17 +112,21 @@ export async function createReminder({ list, title, body = '', dueMs = null, url
     if (data.dueMs !== null && data.dueMs !== undefined) {
       props.dueDate = new Date(data.dueMs);
     }
+    if (data.priority) props.priority = data.priority;
+    if (data.remindMs !== null && data.remindMs !== undefined) {
+      props.remindMeDate = new Date(data.remindMs);
+    }
     if (data.url) props.body = (props.body ? props.body + '\\n\\n' : '') + data.url;
     const reminder = Reminders.Reminder(props);
     targetList.reminders.push(reminder);
     return reminder.id();
   `,
-    { list, title, body, dueMs, url },
+    { list, title, body, dueMs, url, priority, remindMs },
   );
 }
 
-/** Updates an existing reminder's title/due date by its persistent id. */
-export async function updateReminder({ id, title, body, dueMs }) {
+/** Updates an existing reminder's title/due date/priority/alarm by its persistent id. */
+export async function updateReminder({ id, title, body, dueMs, priority, remindMs }) {
   return runJxa(
     `
     const Reminders = Application('Reminders');
@@ -133,9 +138,13 @@ export async function updateReminder({ id, title, body, dueMs }) {
     if (data.dueMs !== undefined) {
       reminder.dueDate = data.dueMs === null ? null : new Date(data.dueMs);
     }
+    if (data.priority !== undefined) reminder.priority = data.priority;
+    if (data.remindMs !== undefined) {
+      reminder.remindMeDate = data.remindMs === null ? null : new Date(data.remindMs);
+    }
     return { updated: true };
   `,
-    { id, title, body, dueMs },
+    { id, title, body, dueMs, priority, remindMs },
   );
 }
 
