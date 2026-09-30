@@ -9,6 +9,7 @@ import { dedupeTasks } from './model/task.js';
 import { renderTerminal } from './render/terminal.js';
 import { renderJson } from './render/json.js';
 import { planSync, applySync, applyCompletions } from './reminders/sync.js';
+import { buildView } from './reminders/policy.js';
 import { resolveModule, isSubmitted, FN_EVENT_BY_ID, FN_COURSE_MODULE, FN_SUBMISSION_STATUS } from './moodle/submissions.js';
 import { findReminderIds } from './reminders/jxa.js';
 import { loadState, saveState } from './state/store.js';
@@ -131,7 +132,12 @@ async function syncReminders(tasks, cfg, { dryRun, log, client, feedIds }) {
   } catch {
     existingReminderIds = undefined;
   }
-  const plan = planSync(tasks, state, { existingReminderIds, feedIds });
+  // One clock reading per run so every task's priority/alarm is computed
+  // against the same "now".
+  const now = new Date();
+  const decorate = (task) =>
+    buildView(task, { now, soonDays: cfg.soonDays, leadHours: cfg.alarmLeadHours, prefix: cfg.coursePrefix });
+  const plan = planSync(tasks, state, { existingReminderIds, feedIds, decorate });
 
   let verified = [];
   if (client && plan.completionCandidates.length > 0) {
@@ -150,7 +156,7 @@ async function syncReminders(tasks, cfg, { dryRun, log, client, feedIds }) {
     return;
   }
 
-  const result = await applySync(plan, { listName: cfg.remindersList, state });
+  const result = await applySync(plan, { listName: cfg.remindersList, state, decorate });
   const done = await applyCompletions(verified, { state: result.state });
   await saveState(done.state);
   if (result.created.length > 0) {

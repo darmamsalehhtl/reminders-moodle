@@ -38,6 +38,12 @@ export function scrub(text, secrets) {
   return out;
 }
 
+/** Parses a 0/1/true/false/yes/no env value, falling back to `def` when unset. */
+function flag(value, def) {
+  if (value === undefined || value === '') return def;
+  return !['0', 'false', 'no', 'off'].includes(String(value).toLowerCase());
+}
+
 function normalizeUrl(url) {
   return url.replace(/\/+$/, '');
 }
@@ -76,6 +82,11 @@ export function loadConfig({ envPath, env = process.env } = {}) {
   const soonDays = e.SOON_DAYS ? Number(e.SOON_DAYS) : 3;
   const lookaheadDays = e.LOOKAHEAD_DAYS ? Number(e.LOOKAHEAD_DAYS) : 30;
   const remindersList = e.REMINDERS_LIST || 'Schulaufgaben';
+  const alarmLeadHours = e.ALARM_LEAD_HOURS ? Number(e.ALARM_LEAD_HOURS) : 24;
+  if (!Number.isFinite(alarmLeadHours) || alarmLeadHours < 0) {
+    throw new ConfigError(`ALARM_LEAD_HOURS must be a non-negative number: "${e.ALARM_LEAD_HOURS}"`);
+  }
+  const coursePrefix = flag(e.COURSE_PREFIX, true);
 
   return {
     moodleUrl: normalizeUrl(url),
@@ -85,6 +96,8 @@ export function loadConfig({ envPath, env = process.env } = {}) {
     soonDays,
     lookaheadDays,
     remindersList,
+    alarmLeadHours,
+    coursePrefix,
     envPath: envPath ?? path.join(projectRoot, '.env'),
     /** All secret values that must never be printed verbatim. */
     secrets: [token].filter(Boolean),
