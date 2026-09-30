@@ -79,6 +79,16 @@ The tradeoff: the calendar export doesn't reliably include the course name
 per event, so course names shown via this path are a best-effort guess
 (flagged as `courseGuessed: true` in `--json` output).
 
+## Automatic check-off
+
+When you hand in an assignment, its reminder is ticked off on the next run
+(manual, or the daily 08:00 launchd run). A synced task that has vanished
+from Moodle's open-task feed is checked with `mod_assign_get_submission_status`;
+only if Moodle confirms it was submitted is the reminder completed. If you
+revert the submission and the task reappears, the reminder is reopened.
+Needs the web service source (not iCal); `--doctor` shows whether the two
+required functions are available, `--dry-run` shows what would be ticked off.
+
 ## Daily automation
 
 ```bash
@@ -137,6 +147,7 @@ src/config.js              .env loading/validation, secret redaction
 src/moodle/client.js       Web Services REST transport (timeout/retry/errors)
 src/moodle/auth.js         --login: mint a token via /login/token.php
 src/moodle/tasks.js        fetch + normalize core_calendar_get_action_events_by_timesort
+src/moodle/submissions.js  resolve event -> assignment, check submission status
 src/moodle/ical.js         fallback: parse a Moodle calendar export URL
 src/model/task.js          the shared Task shape, status buckets, sorting
 src/render/terminal.js     boxed terminal output

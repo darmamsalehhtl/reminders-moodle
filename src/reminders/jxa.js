@@ -139,6 +139,20 @@ export async function updateReminder({ id, title, body, dueMs }) {
   );
 }
 
+/** Marks a reminder completed/uncompleted by its persistent id. */
+export async function setCompleted({ id, completed }) {
+  return runJxa(
+    `
+    const Reminders = Application('Reminders');
+    const matches = Reminders.reminders.whose({ id: data.id })();
+    if (matches.length === 0) return { updated: false };
+    matches[0].completed = data.completed;
+    return { updated: true };
+  `,
+    { id, completed },
+  );
+}
+
 /** Returns the persistent ids of every reminder currently in a list (any completion state). */
 export async function findReminderIds(list) {
   return runJxa(

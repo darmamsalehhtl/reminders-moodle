@@ -16,15 +16,28 @@ import * as jxa from './jxa.js';
  *
  * @param {import('../model/task.js').Task[]} tasks
  * @param {{tasks: Record<string, {reminderId:string, hash:string}>}} state
- * @param {{existingReminderIds?: Set<string>}} [opts] pass the real ids from
- *   findReminderIds() to detect user-deleted reminders; omit to skip that
- *   check (e.g. in tests that don't care about it).
+ * @param {{existingReminderIds?: Set<string>, feedIds?: Set<string>}} [opts]
+ *   existingReminderIds: the real ids from findReminderIds() to detect
+ *   user-deleted reminders; omit to skip that check.
+ *   feedIds: ids of every task in the fetched feed *before* any --course
+ *   filtering (defaults to the ids of `tasks`); used to tell which synced
+ *   tasks vanished from the feed.
+ *
+ * Besides the create/update/skip buckets it returns:
+ *  - completionCandidates: ws tasks that vanished from the feed and whose
+ *    reminder is still open - possibly submitted, must be verified against
+ *    Moodle before being ticked off
+ *  - reopen: tasks we ticked off earlier that are back in the feed
+ *    (the submission was reverted)
  */
-export function planSync(tasks, state, { existingReminderIds } = {}) {
+export function planSync(tasks, state, { existingReminderIds, feedIds } = {}) {
   const create = [];
   const update = [];
   const skip = [];
   const deletedByUser = [];
+  const reopen = [];
+  const completionCandidates = [];
+  const inFeed = feedIds ?? new Set(tasks.map((t) => t.id));
 
   for (const task of tasks) {
     const known = state.tasks[task.id];
@@ -40,6 +53,8 @@ export function planSync(tasks, state, { existingReminderIds } = {}) {
       continue;
     }
 
+    if (known.completedAt) reopen.push({ task, reminderId: known.reminderId });
+
     if (known.hash !== hash) {
       update.push({ task, reminderId: known.reminderId });
     } else {
@@ -47,7 +62,14 @@ export function planSync(tasks, state, { existingReminderIds } = {}) {
     }
   }
 
-  return { create, update, skip, deletedByUser };
+  for (const [taskId, entry] of Object.entries(state.tasks)) {
+    if (!taskId.startsWith('ws:')) continue;
+    if (inFeed.has(taskId) || entry.deletedByUser || entry.completedAt) continue;
+    if (existingReminderIds && !existingReminderIds.has(entry.reminderId)) continue;
+    completionCandidates.push({ taskId, entry });
+  }
+
+  return { create, update, skip, deletedByUser, reopen, completionCandidates };
 }
 
 /**
@@ -72,7 +94,12 @@ export async function applySync(plan, { listName, state }) {
         dueMs: task.due ? task.due.getTime() : null,
         url: task.url,
       });
-      nextTasks[task.id] = { reminderId, hash: taskChangeHash(task), syncedAt: new Date().toISOString() };
+      nextTasks[task.id] = {
+        reminderId,
+        hash: taskChangeHash(task),
+        syncedAt: new Date().toISOString(),
+        title: task.title,
+      };
       created.push(task);
     } catch (err) {
       errors.push(err);
@@ -86,7 +113,25 @@ export async function applySync(plan, { listName, state }) {
         title: task.title,
         dueMs: task.due ? task.due.getTime() : null,
       });
-      nextTasks[task.id] = { reminderId, hash: taskChangeHash(task), syncedAt: new Date().toISOString() };
+      nextTasks[task.id] = {
+        ...nextTasks[task.id],
+        reminderId,
+        hash: taskChangeHash(task),
+        syncedAt: new Date().toISOString(),
+        title: task.title,
+      };
+    } catch (err) {
+      errors.push(err);
+    }
+  }
+
+  const reopened = [];
+  for (const { task, reminderId } of plan.reopen ?? []) {
+    try {
+      await jxa.setCompleted({ id: reminderId, completed: false });
+      const { completedAt, ...rest } = nextTasks[task.id];
+      nextTasks[task.id] = rest;
+      reopened.push(task);
     } catch (err) {
       errors.push(err);
     }
@@ -97,5 +142,27 @@ export async function applySync(plan, { listName, state }) {
     if (nextTasks[task.id]) nextTasks[task.id].deletedByUser = true;
   }
 
-  return { state: { ...state, tasks: nextTasks }, created, errors };
+  return { state: { ...state, tasks: nextTasks }, created, reopened, errors };
+}
+
+/**
+ * Ticks off the reminders of tasks that were verified as handed in.
+ * @param {{taskId: string, entry: object}[]} verified
+ */
+export async function applyCompletions(verified, { state }) {
+  const nextTasks = { ...state.tasks };
+  const completed = [];
+  const errors = [];
+
+  for (const { taskId, entry } of verified) {
+    try {
+      await jxa.setCompleted({ id: entry.reminderId, completed: true });
+      nextTasks[taskId] = { ...entry, completedAt: new Date().toISOString() };
+      completed.push({ taskId, title: entry.title ?? taskId });
+    } catch (err) {
+      errors.push(err);
+    }
+  }
+
+  return { state: { ...state, tasks: nextTasks }, completed, errors };
 }

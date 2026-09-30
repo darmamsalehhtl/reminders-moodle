@@ -8,7 +8,8 @@ import { fetchIcalTasks } from './moodle/ical.js';
 import { dedupeTasks } from './model/task.js';
 import { renderTerminal } from './render/terminal.js';
 import { renderJson } from './render/json.js';
-import { planSync, applySync } from './reminders/sync.js';
+import { planSync, applySync, applyCompletions } from './reminders/sync.js';
+import { resolveModule, isSubmitted, FN_EVENT_BY_ID, FN_COURSE_MODULE, FN_SUBMISSION_STATUS } from './moodle/submissions.js';
 import { findReminderIds } from './reminders/jxa.js';
 import { loadState, saveState } from './state/store.js';
 import { notify } from './notify.js';
@@ -35,7 +36,7 @@ async function fetchTasks(cfg, { source, days, log }) {
       throw new ConfigError('MOODLE_ICAL_URL is not set. Copy the Moodle calendar export URL into .env, or run --login to use the web service instead.');
     }
     log('Fetching tasks via iCal calendar export...');
-    return fetchIcalTasks(cfg.icalUrl);
+    return { tasks: await fetchIcalTasks(cfg.icalUrl), client: null };
   }
 
   if (!cfg.token) {
@@ -43,7 +44,7 @@ async function fetchTasks(cfg, { source, days, log }) {
   }
   const client = new MoodleClient({ moodleUrl: cfg.moodleUrl, token: cfg.token, secrets: cfg.secrets });
   log('Fetching tasks via Moodle web services...');
-  return fetchActionEvents(client, { from, to });
+  return { tasks: await fetchActionEvents(client, { from, to }), client };
 }
 
 function filterByCourse(tasks, courseFilter) {
@@ -56,8 +57,12 @@ async function runFetch(opts) {
   const cfg = loadConfig();
   const log = opts.json ? (...args) => console.error(...args) : (...args) => console.log(...args);
 
-  let tasks = await fetchTasks(cfg, { source: opts.source, days: opts.days ?? cfg.lookaheadDays, log });
-  tasks = dedupeTasks(tasks);
+  const fetched = await fetchTasks(cfg, { source: opts.source, days: opts.days ?? cfg.lookaheadDays, log });
+  const client = fetched.client;
+  let tasks = dedupeTasks(fetched.tasks);
+  // Ids of the whole feed, before --course filtering: a task hidden by the
+  // filter must not look like it vanished (i.e. was handed in).
+  const feedIds = new Set(tasks.map((t) => t.id));
   tasks = filterByCourse(tasks, opts.course);
 
   const soonDays = cfg.soonDays;
@@ -74,7 +79,7 @@ async function runFetch(opts) {
     // authorized, ...) must never turn a successful task fetch into a
     // failed run - it's reported and the process still exits 0.
     try {
-      await syncReminders(tasks, cfg, { dryRun: opts.dryRun, log });
+      await syncReminders(tasks, cfg, { dryRun: opts.dryRun, log, client, feedIds });
     } catch (err) {
       log(`Reminders-Sync fehlgeschlagen: ${err.message}`);
     }
@@ -83,7 +88,39 @@ async function runFetch(opts) {
   }
 }
 
-async function syncReminders(tasks, cfg, { dryRun, log }) {
+/**
+ * Of the synced tasks that vanished from the feed, returns those Moodle
+ * confirms as handed in. Vanishing alone is not proof (deadline moved out
+ * of the window, event deleted), so each candidate is checked. Errors on a
+ * single task are logged and retried on the next run.
+ */
+async function verifySubmitted(candidates, client, log) {
+  const verified = [];
+  for (const cand of candidates) {
+    const { taskId, entry } = cand;
+    try {
+      let mod = entry.modulename && entry.instance ? entry : null;
+      if (!mod) {
+        const eventId = Number(taskId.slice('ws:'.length));
+        if (!Number.isInteger(eventId)) continue;
+        mod = await resolveModule(client, eventId);
+        if (!mod) {
+          log(`Abgabestatus für ${entry.title ?? taskId} unbekannt (Modul nicht auffindbar).`);
+          continue;
+        }
+        cand.entry = { ...entry, modulename: mod.modulename, instance: mod.instance };
+      }
+      const submitted = await isSubmitted(client, mod);
+      if (submitted === true) verified.push(cand);
+      else if (submitted === null) log(`Abgabestatus für ${entry.title ?? taskId} unbekannt.`);
+    } catch (err) {
+      log(`Abgabestatus für ${entry.title ?? taskId} nicht prüfbar: ${err.message}`);
+    }
+  }
+  return verified;
+}
+
+async function syncReminders(tasks, cfg, { dryRun, log, client, feedIds }) {
   const state = await loadState();
   // Existing reminder ids tell the planner which of *our* previously
   // synced reminders the user deleted on purpose (see reminders/sync.js);
@@ -94,23 +131,40 @@ async function syncReminders(tasks, cfg, { dryRun, log }) {
   } catch {
     existingReminderIds = undefined;
   }
-  const plan = planSync(tasks, state, { existingReminderIds });
+  const plan = planSync(tasks, state, { existingReminderIds, feedIds });
+
+  let verified = [];
+  if (client && plan.completionCandidates.length > 0) {
+    verified = await verifySubmitted(plan.completionCandidates, client, log);
+  } else if (!client) {
+    log('(Automatisches Abhaken übersprungen: braucht die Web-Service-Quelle, nicht iCal.)');
+  }
 
   if (dryRun) {
     log('');
     log(`[dry-run] würde ${plan.create.length} erstellen, ${plan.update.length} aktualisieren, ${plan.skip.length} überspringen.`);
     for (const t of plan.create) log(`  + create: ${t.title}`);
-    for (const t of plan.update) log(`  ~ update: ${t.title}`);
+    for (const { task } of plan.update) log(`  ~ update: ${task.title}`);
+    for (const { entry, taskId } of verified) log(`  ✓ complete: ${entry.title ?? taskId}`);
+    for (const { task } of plan.reopen) log(`  ↺ reopen: ${task.title}`);
     return;
   }
 
   const result = await applySync(plan, { listName: cfg.remindersList, state });
-  await saveState(result.state);
+  const done = await applyCompletions(verified, { state: result.state });
+  await saveState(done.state);
   if (result.created.length > 0) {
     log(`Zu Reminders hinzugefügt: ${result.created.map((t) => t.title).join(', ')}`);
     await notify(`${result.created.length} neue Aufgabe(n) zu "${cfg.remindersList}" hinzugefügt`);
   }
-  for (const e of result.errors) log(`Reminders-Fehler: ${e.message}`);
+  if (done.completed.length > 0) {
+    log(`Als erledigt abgehakt: ${done.completed.map((t) => t.title).join(', ')}`);
+    await notify(`${done.completed.length} abgegebene Aufgabe(n) abgehakt`);
+  }
+  if (result.reopened.length > 0) {
+    log(`Wieder geöffnet (Abgabe zurückgezogen): ${result.reopened.map((t) => t.title).join(', ')}`);
+  }
+  for (const e of [...result.errors, ...done.errors]) log(`Reminders-Fehler: ${e.message}`);
 }
 
 async function runLogin() {
@@ -167,6 +221,14 @@ async function runDoctor() {
       ? '✅ core_calendar_get_action_events_by_timesort is available.'
       : '❌ core_calendar_get_action_events_by_timesort is NOT exposed to this token – use --source ical.',
   );
+
+  for (const fn of [FN_EVENT_BY_ID, FN_COURSE_MODULE, FN_SUBMISSION_STATUS]) {
+    console.log(
+      info.functions.includes(fn)
+        ? `✅ ${fn} is available (auto check-off).`
+        : `⚠️  ${fn} is NOT exposed – submitted assignments won't be checked off automatically.`,
+    );
+  }
 
   if (process.platform === 'darwin') {
     console.log('✅ Running on macOS – Reminders sync available.');

@@ -90,3 +90,33 @@ test('without existingReminderIds, deletedByUser detection is skipped entirely',
   assert.deepEqual(plan.skip, [task]);
   assert.deepEqual(plan.deletedByUser, []);
 });
+
+test('vanished ws task with open reminder -> completion candidate', () => {
+  const stillHere = mkTask({ id: 'ws:1' });
+  const state = {
+    tasks: {
+      'ws:1': { reminderId: 'r1', hash: taskChangeHash(stillHere) },
+      'ws:2': { reminderId: 'r2', hash: 'x' },
+      'ws:3': { reminderId: 'r3', hash: 'x', completedAt: '2026-09-01T00:00:00Z' },
+      'ws:4': { reminderId: 'r4', hash: 'x', deletedByUser: true },
+      'ws:5': { reminderId: 'r5', hash: 'x' }, // reminder gone from the app
+      'ical:6': { reminderId: 'r6', hash: 'x' },
+    },
+  };
+  const plan = planSync([stillHere], state, { existingReminderIds: new Set(['r1', 'r2', 'r3', 'r4', 'r6']) });
+  assert.deepEqual(plan.completionCandidates.map((c) => c.taskId), ['ws:2']);
+});
+
+test('feedIds keeps course-filtered tasks from looking vanished', () => {
+  const shown = mkTask({ id: 'ws:1' });
+  const state = { tasks: { 'ws:2': { reminderId: 'r2', hash: 'x' } } };
+  const plan = planSync([shown], state, { feedIds: new Set(['ws:1', 'ws:2']) });
+  assert.deepEqual(plan.completionCandidates, []);
+});
+
+test('completed task back in the feed -> reopen', () => {
+  const task = mkTask({ id: 'ws:1' });
+  const state = { tasks: { 'ws:1': { reminderId: 'r1', hash: taskChangeHash(task), completedAt: '2026-09-01T00:00:00Z' } } };
+  const plan = planSync([task], state, { existingReminderIds: new Set(['r1']) });
+  assert.deepEqual(plan.reopen, [{ task, reminderId: 'r1' }]);
+});
