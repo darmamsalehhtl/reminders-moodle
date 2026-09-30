@@ -80,3 +80,19 @@ export function taskChangeHash(task) {
   const key = `${task.title}|${task.due ? task.due.toISOString() : ''}`;
   return createHash('sha1').update(key).digest('hex').slice(0, 16);
 }
+
+/**
+ * Drops tasks whose course or title contains any of the given substrings
+ * (case-insensitive). Used for the IGNORE_COURSES / IGNORE_TITLES config.
+ */
+export function applyIgnore(tasks, { courses = [], titles = [] } = {}) {
+  const lower = (list) => list.map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const courseNeedles = lower(courses);
+  const titleNeedles = lower(titles);
+  if (courseNeedles.length === 0 && titleNeedles.length === 0) return tasks;
+  return tasks.filter((t) => {
+    const course = (t.course ?? '').toLowerCase();
+    const title = t.title.toLowerCase();
+    return !courseNeedles.some((n) => course.includes(n)) && !titleNeedles.some((n) => title.includes(n));
+  });
+}

@@ -105,3 +105,16 @@ test('taskChangeHash is stable for identical title+due and changes otherwise', (
   assert.equal(h1, h2);
   assert.notEqual(h1, h3);
 });
+
+import { applyIgnore } from '../src/model/task.js';
+
+test('applyIgnore drops tasks by course or title substring, case-insensitively', () => {
+  const tasks = [
+    { id: '1', title: 'HÜ 5', course: '4AHIF Mathematik' },
+    { id: '2', title: 'Laufen', course: '4AHIF Sport' },
+    { id: '3', title: 'Anwesenheit eintragen', course: null },
+  ];
+  assert.deepEqual(applyIgnore(tasks, { courses: ['sport'], titles: ['ANWESENHEIT'] }).map((t) => t.id), ['1']);
+  assert.equal(applyIgnore(tasks, {}), tasks);
+  assert.equal(applyIgnore(tasks, { courses: [' ', ''] }).length, 3);
+});

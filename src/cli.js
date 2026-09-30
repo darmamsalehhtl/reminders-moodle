@@ -5,7 +5,7 @@ import { MoodleClient, MoodleError } from './moodle/client.js';
 import { mintToken, promptHidden } from './moodle/auth.js';
 import { getSiteInfo, fetchActionEvents } from './moodle/tasks.js';
 import { fetchIcalTasks } from './moodle/ical.js';
-import { dedupeTasks } from './model/task.js';
+import { dedupeTasks, applyIgnore } from './model/task.js';
 import { renderTerminal } from './render/terminal.js';
 import { renderJson } from './render/json.js';
 import { planSync, applySync, applyCompletions } from './reminders/sync.js';
@@ -64,6 +64,9 @@ async function runFetch(opts) {
   // Ids of the whole feed, before --course filtering: a task hidden by the
   // filter must not look like it vanished (i.e. was handed in).
   const feedIds = new Set(tasks.map((t) => t.id));
+  // Ignored tasks stay in `feedIds` above, so hiding one can never make it
+  // look like a submitted (vanished) assignment.
+  tasks = applyIgnore(tasks, { courses: cfg.ignoreCourses, titles: cfg.ignoreTitles });
   tasks = filterByCourse(tasks, opts.course);
 
   const soonDays = cfg.soonDays;

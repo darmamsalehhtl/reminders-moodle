@@ -44,6 +44,11 @@ function flag(value, def) {
   return !['0', 'false', 'no', 'off'].includes(String(value).toLowerCase());
 }
 
+/** Splits a comma-separated env value into trimmed, non-empty entries. */
+function list(value) {
+  return (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
 function normalizeUrl(url) {
   return url.replace(/\/+$/, '');
 }
@@ -87,6 +92,8 @@ export function loadConfig({ envPath, env = process.env } = {}) {
     throw new ConfigError(`ALARM_LEAD_HOURS must be a non-negative number: "${e.ALARM_LEAD_HOURS}"`);
   }
   const coursePrefix = flag(e.COURSE_PREFIX, true);
+  const ignoreCourses = list(e.IGNORE_COURSES);
+  const ignoreTitles = list(e.IGNORE_TITLES);
 
   return {
     moodleUrl: normalizeUrl(url),
@@ -98,6 +105,8 @@ export function loadConfig({ envPath, env = process.env } = {}) {
     remindersList,
     alarmLeadHours,
     coursePrefix,
+    ignoreCourses,
+    ignoreTitles,
     envPath: envPath ?? path.join(projectRoot, '.env'),
     /** All secret values that must never be printed verbatim. */
     secrets: [token].filter(Boolean),
