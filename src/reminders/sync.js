@@ -16,12 +16,17 @@ import * as jxa from './jxa.js';
  *
  * @param {import('../model/task.js').Task[]} tasks
  * @param {{tasks: Record<string, {reminderId:string, hash:string}>}} state
- * @param {{existingReminderIds?: Set<string>, feedIds?: Set<string>}} [opts]
+ * @param {{existingReminderIds?: Set<string>, feedIds?: Set<string>,
+ *   decorate?: (task) => {sig: string}}} [opts]
  *   existingReminderIds: the real ids from findReminderIds() to detect
  *   user-deleted reminders; omit to skip that check.
  *   feedIds: ids of every task in the fetched feed *before* any --course
  *   filtering (defaults to the ids of `tasks`); used to tell which synced
  *   tasks vanished from the feed.
+ *   decorate: maps a task to its reminder view (see policy.js buildView). When
+ *   given, a reminder whose stored view signature differs (title prefix or
+ *   priority changed) is planned as an update even if the task itself is
+ *   unchanged; entries without a signature count as stale once.
  *
  * Besides the create/update/skip buckets it returns:
  *  - completionCandidates: ws tasks that vanished from the feed and whose
@@ -30,7 +35,7 @@ import * as jxa from './jxa.js';
  *  - reopen: tasks we ticked off earlier that are back in the feed
  *    (the submission was reverted)
  */
-export function planSync(tasks, state, { existingReminderIds, feedIds } = {}) {
+export function planSync(tasks, state, { existingReminderIds, feedIds, decorate } = {}) {
   const create = [];
   const update = [];
   const skip = [];
@@ -55,7 +60,8 @@ export function planSync(tasks, state, { existingReminderIds, feedIds } = {}) {
 
     if (known.completedAt) reopen.push({ task, reminderId: known.reminderId });
 
-    if (known.hash !== hash) {
+    const viewStale = decorate ? known.sig !== decorate(task).sig : false;
+    if (known.hash !== hash || viewStale) {
       update.push({ task, reminderId: known.reminderId });
     } else {
       skip.push(task);
@@ -78,7 +84,7 @@ export function planSync(tasks, state, { existingReminderIds, feedIds } = {}) {
  * notification/log line). Individual reminder failures are collected in
  * `errors` rather than aborting the whole run.
  */
-export async function applySync(plan, { listName, state }) {
+export async function applySync(plan, { listName, state, decorate }) {
   await jxa.ensureList(listName);
 
   const nextTasks = { ...state.tasks };
@@ -87,9 +93,12 @@ export async function applySync(plan, { listName, state }) {
 
   for (const task of plan.create) {
     try {
+      const view = decorate?.(task);
       const reminderId = await jxa.createReminder({
         list: listName,
-        title: task.title,
+        title: view?.title ?? task.title,
+        priority: view?.priority,
+        remindMs: view?.remindMs,
         body: [task.course, task.description].filter(Boolean).join('\n\n'),
         dueMs: task.due ? task.due.getTime() : null,
         url: task.url,
@@ -99,6 +108,7 @@ export async function applySync(plan, { listName, state }) {
         hash: taskChangeHash(task),
         syncedAt: new Date().toISOString(),
         title: task.title,
+        ...(view && { sig: view.sig }),
       };
       created.push(task);
     } catch (err) {
@@ -108,10 +118,12 @@ export async function applySync(plan, { listName, state }) {
 
   for (const { task, reminderId } of plan.update) {
     try {
+      const view = decorate?.(task);
       await jxa.updateReminder({
         id: reminderId,
-        title: task.title,
+        title: view?.title ?? task.title,
         dueMs: task.due ? task.due.getTime() : null,
+        ...(view && { priority: view.priority, remindMs: view.remindMs }),
       });
       nextTasks[task.id] = {
         ...nextTasks[task.id],
@@ -119,6 +131,7 @@ export async function applySync(plan, { listName, state }) {
         hash: taskChangeHash(task),
         syncedAt: new Date().toISOString(),
         title: task.title,
+        ...(view && { sig: view.sig }),
       };
     } catch (err) {
       errors.push(err);

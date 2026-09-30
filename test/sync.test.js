@@ -120,3 +120,17 @@ test('completed task back in the feed -> reopen', () => {
   const plan = planSync([task], state, { existingReminderIds: new Set(['r1']) });
   assert.deepEqual(plan.reopen, [{ task, reminderId: 'r1' }]);
 });
+
+test('decorate: stale or missing view signature -> update even if the task is unchanged', () => {
+  const task = mkTask({ id: 'ws:1' });
+  const decorate = () => ({ sig: 'new' });
+  const base = { reminderId: 'r1', hash: taskChangeHash(task) };
+  const ids = new Set(['r1']);
+
+  const stale = planSync([task], { tasks: { 'ws:1': { ...base, sig: 'old' } } }, { existingReminderIds: ids, decorate });
+  assert.equal(stale.update.length, 1);
+  const missing = planSync([task], { tasks: { 'ws:1': base } }, { existingReminderIds: ids, decorate });
+  assert.equal(missing.update.length, 1);
+  const fresh = planSync([task], { tasks: { 'ws:1': { ...base, sig: 'new' } } }, { existingReminderIds: ids, decorate });
+  assert.deepEqual(fresh.skip, [task]);
+});
