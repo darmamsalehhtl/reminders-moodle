@@ -1,0 +1,54 @@
+schema: spec-driven
+
+context: |
+  moodle-task-fetcher: a private Node >=20 ESM CLI (no framework) that fetches
+  open Moodle assignments and mirrors them into macOS Reminders.
+
+  Tech stack: plain Node ESM, commander, chalk, dotenv, node-cron. Tests are
+  node:test only (`npm test`), no test framework and no mocking library.
+  User-facing output and log lines are German; code, comments and commit
+  messages are English.
+
+  Conventions:
+  - Conventional commits, many small commits, one concern each.
+  - Keep side effects at the edges: pure planners/normalizers (model/,
+    reminders/sync.js planSync, reminders/policy.js) stay unit-testable off
+    macOS; osascript/JXA and network calls live in their own modules.
+  - Never string-interpolate data into JXA scripts (injection + quoting);
+    pass it as a JSON argv payload.
+  - Secrets (the Moodle token) must never be printed verbatim - scrub/redact
+    every error message.
+  - "Unknown" is never treated as "submitted": submission checks return
+    true/false/null and only a definite true ticks a reminder off.
+  - A Reminders or notification failure must not fail a successful fetch.
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
