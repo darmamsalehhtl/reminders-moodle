@@ -103,6 +103,9 @@ export function loadConfig({ envPath, env = process.env } = {}) {
   const lookaheadDays = number('LOOKAHEAD_DAYS', e.LOOKAHEAD_DAYS, 30);
   const remindersList = e.REMINDERS_LIST || 'Schulaufgaben';
   const alarmLeadHours = number('ALARM_LEAD_HOURS', e.ALARM_LEAD_HOURS, 24);
+  const remindersEventsList = e.REMINDERS_EVENTS_LIST || 'Schultermine';
+  const eventAlarmLeadHours = number('EVENT_ALARM_LEAD_HOURS', e.EVENT_ALARM_LEAD_HOURS, 1);
+  const events = flag(e.EVENTS, true);
   const coursePrefix = flag(e.COURSE_PREFIX, true);
   const digest = flag(e.DIGEST, true);
   const ignoreCourses = list(e.IGNORE_COURSES);
@@ -116,7 +119,10 @@ export function loadConfig({ envPath, env = process.env } = {}) {
     soonDays,
     lookaheadDays,
     remindersList,
+    remindersEventsList,
     alarmLeadHours,
+    eventAlarmLeadHours,
+    events,
     coursePrefix,
     digest,
     ignoreCourses,
