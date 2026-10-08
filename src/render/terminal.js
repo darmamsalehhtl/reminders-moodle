@@ -38,13 +38,24 @@ function relativeDays(task, now) {
   return `(in ${days} ${days === 1 ? 'Tag' : 'Tagen'})`;
 }
 
+/** Relative phrasing for an appointment - "fällig" is deadline language. */
+function relativeWhen(event, now) {
+  if (!event.due) return '';
+  const diffMs = event.due.getTime() - now.getTime();
+  if (diffMs < 0) return '(vorbei)';
+  const days = Math.round(diffMs / (24 * 60 * 60 * 1000));
+  if (days === 0) return '(heute)';
+  if (days === 1) return '(morgen)';
+  return `(in ${days} Tagen)`;
+}
+
 /**
  * Renders the boxed terminal view described in the project brief. Colors
  * are applied per-bucket (red/yellow/green/gray) and automatically disabled
  * by chalk when stdout isn't a TTY or NO_COLOR is set; `noColor: true`
  * forces that off explicitly for --no-color.
  */
-export function renderTerminal(tasks, { now = new Date(), soonDays = 3, noColor = false } = {}) {
+export function renderTerminal(tasks, { now = new Date(), soonDays = 3, noColor = false, events = [] } = {}) {
   const c = new Chalk({ level: noColor ? 0 : undefined });
   const sorted = sortTasks(tasks, { now, soonDays });
   const width = 66;
@@ -86,8 +97,32 @@ export function renderTerminal(tasks, { now = new Date(), soonDays = 3, noColor 
   }
 
   lines.push(c.bold(bottom));
+
+  // Appointments are a separate section: they are not graded work, carry no
+  // course, and have a start time rather than a deadline.
+  if (events.length > 0) {
+    const byStart = [...events].sort((a, b) => (a.due?.getTime() ?? 0) - (b.due?.getTime() ?? 0));
+    lines.push('');
+    lines.push(c.bold(top));
+    lines.push(`║${centerLine('\u{1F4C5} DEINE TERMINE', width)}║`);
+    lines.push(sep);
+    lines.push(`║${' '.repeat(width)}║`);
+    for (const event of byStart) {
+      lines.push(`║${padLine(`  ${event.title}`, width)}║`);
+      if (event.due) {
+        const when = event.allDay
+          ? `${formatDate(event.due)} (ganztägig)`
+          : formatDateTime(event.due);
+        lines.push(`║${padLine(`  Beginn: ${when} ${relativeWhen(event, now)}`, width)}║`);
+      }
+    }
+    lines.push(`║${' '.repeat(width)}║`);
+    lines.push(c.bold(bottom));
+  }
+
   lines.push('');
-  lines.push(`Insgesamt: ${sorted.length} offene Aufgabe${sorted.length === 1 ? '' : 'n'} | Zuletzt aktualisiert: ${formatDateTime(now)}`);
+  const eventSuffix = events.length > 0 ? ` | ${events.length} Termin${events.length === 1 ? '' : 'e'}` : '';
+  lines.push(`Insgesamt: ${sorted.length} offene Aufgabe${sorted.length === 1 ? '' : 'n'}${eventSuffix} | Zuletzt aktualisiert: ${formatDateTime(now)}`);
 
   return lines.join('\n');
 }
