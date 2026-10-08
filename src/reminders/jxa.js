@@ -98,10 +98,12 @@ export async function ensureList(name) {
 /**
  * Creates a reminder in the given list.
  * @param {{list: string, title: string, body?: string, dueMs?: number|null, url?: string|null,
- *   priority?: number, remindMs?: number|null}} params
+ *   priority?: number, remindMs?: number|null, allDay?: boolean}} params
+ *   allDay: set the date without a time of day (Reminders' "allday due
+ *   date"), for an appointment that covers a whole day.
  * @returns {Promise<string>} the new reminder's persistent id
  */
-export async function createReminder({ list, title, body = '', dueMs = null, url = null, priority = 0, remindMs = null }) {
+export async function createReminder({ list, title, body = '', dueMs = null, url = null, priority = 0, remindMs = null, allDay = false }) {
   return runJxa(
     `
     const Reminders = Application('Reminders');
@@ -110,7 +112,8 @@ export async function createReminder({ list, title, body = '', dueMs = null, url
     const targetList = lists[0];
     const props = { name: data.title, body: data.body || '' };
     if (data.dueMs !== null && data.dueMs !== undefined) {
-      props.dueDate = new Date(data.dueMs);
+      if (data.allDay) props.alldayDueDate = new Date(data.dueMs);
+      else props.dueDate = new Date(data.dueMs);
     }
     if (data.priority) props.priority = data.priority;
     if (data.remindMs !== null && data.remindMs !== undefined) {
@@ -121,12 +124,12 @@ export async function createReminder({ list, title, body = '', dueMs = null, url
     targetList.reminders.push(reminder);
     return reminder.id();
   `,
-    { list, title, body, dueMs, url, priority, remindMs },
+    { list, title, body, dueMs, url, priority, remindMs, allDay },
   );
 }
 
 /** Updates an existing reminder's title/due date/priority/alarm by its persistent id. */
-export async function updateReminder({ id, title, body, dueMs, priority, remindMs }) {
+export async function updateReminder({ id, title, body, dueMs, priority, remindMs, allDay = false }) {
   return runJxa(
     `
     const Reminders = Application('Reminders');
@@ -136,7 +139,9 @@ export async function updateReminder({ id, title, body, dueMs, priority, remindM
     if (data.title !== undefined) reminder.name = data.title;
     if (data.body !== undefined) reminder.body = data.body;
     if (data.dueMs !== undefined) {
-      reminder.dueDate = data.dueMs === null ? null : new Date(data.dueMs);
+      const when = data.dueMs === null ? null : new Date(data.dueMs);
+      if (data.allDay) reminder.alldayDueDate = when;
+      else reminder.dueDate = when;
     }
     if (data.priority !== undefined) reminder.priority = data.priority;
     if (data.remindMs !== undefined) {
@@ -144,7 +149,7 @@ export async function updateReminder({ id, title, body, dueMs, priority, remindM
     }
     return { updated: true };
   `,
-    { id, title, body, dueMs, priority, remindMs },
+    { id, title, body, dueMs, priority, remindMs, allDay },
   );
 }
 

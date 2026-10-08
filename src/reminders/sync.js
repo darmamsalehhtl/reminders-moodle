@@ -72,6 +72,9 @@ export function planSync(tasks, state, { existingReminderIds, feedIds, decorate 
     // iCal gives us no way to query a submission, so those can never be
     // verified; calendar-event (ws:) and assignment (assign:) tasks can.
     if (taskId.startsWith('ical:')) continue;
+    // Appointments have nothing to hand in and belong to the other planner
+    // (reminders/events.js); they must never reach the submission check.
+    if (taskId.startsWith('event:')) continue;
     if (inFeed.has(taskId) || entry.deletedByUser || entry.completedAt) continue;
     if (existingReminderIds && !existingReminderIds.has(entry.reminderId)) continue;
     completionCandidates.push({ taskId, entry });
@@ -103,6 +106,7 @@ export async function applySync(plan, { listName, state, decorate }) {
         remindMs: view?.remindMs,
         body: [task.course, task.description].filter(Boolean).join('\n\n'),
         dueMs: task.due ? task.due.getTime() : null,
+        allDay: Boolean(view?.allDay),
         url: task.url,
       });
       nextTasks[task.id] = {
@@ -128,6 +132,7 @@ export async function applySync(plan, { listName, state, decorate }) {
         id: reminderId,
         title: view?.title ?? task.title,
         dueMs: task.due ? task.due.getTime() : null,
+        allDay: Boolean(view?.allDay),
         ...(view && { priority: view.priority, remindMs: view.remindMs }),
       });
       nextTasks[task.id] = {
