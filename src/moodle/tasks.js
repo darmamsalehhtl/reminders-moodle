@@ -55,6 +55,10 @@ function stripHtml(html) {
  * own timeline considers "needs action") whose due time falls within
  * [from, to], paginating past Moodle's per-call limit if needed.
  *
+ * Only ever returns *dated* tasks: in Moodle a calendar event is created by
+ * the due date itself ("X ist fällig."), so an assignment without one has no
+ * event to find here at all. Those come from assignments.js instead.
+ *
  * @param {import('./client.js').MoodleClient} client
  * @param {{from: Date, to: Date, limit?: number}} range
  */
@@ -85,4 +89,5 @@ export async function fetchActionEvents(client, { from, to, limit = PAGE_LIMIT }
   return events.map(normalizeEvent);
 }
 
+export { stripHtml };
 export { normalizeEvent as _normalizeEvent, stripHtml as _stripHtml };
