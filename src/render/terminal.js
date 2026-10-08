@@ -5,7 +5,10 @@ const BUCKET_META = {
   overdue: { icon: '\u{1F534}', label: 'ÜBERFÄLLIG', color: 'red' },
   soon: { icon: '\u{1F7E1}', label: 'BALD FÄLLIG (< 3 Tage)', color: 'yellow' },
   later: { icon: '\u{1F7E2}', label: 'NOCH ZEIT (> 3 Tage)', color: 'green' },
-  undated: { icon: '⚪', label: 'OHNE FÄLLIGKEITSDATUM', color: 'gray' },
+  // The variation selector forces emoji presentation, so the icon's string
+  // length matches the two columns the terminal actually draws (the other
+  // icons are surrogate pairs and already measure as 2).
+  undated: { icon: '⚪️', label: 'OHNE FÄLLIGKEITSDATUM', color: 'gray' },
 };
 
 function pad2(n) {

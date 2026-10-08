@@ -4,6 +4,7 @@ import { loadConfig, ConfigError, redact } from './config.js';
 import { MoodleClient, MoodleError } from './moodle/client.js';
 import { mintToken, promptHidden } from './moodle/auth.js';
 import { getSiteInfo, fetchActionEvents } from './moodle/tasks.js';
+import { fetchUndatedTasks, FN_TIMELINE_COURSES, FN_ASSIGNMENTS } from './moodle/assignments.js';
 import { fetchIcalTasks } from './moodle/ical.js';
 import { dedupeTasks, applyIgnore } from './model/task.js';
 import { renderTerminal } from './render/terminal.js';
@@ -47,7 +48,14 @@ async function fetchTasks(cfg, { source, days, log }) {
   }
   const client = new MoodleClient({ moodleUrl: cfg.moodleUrl, token: cfg.token, secrets: cfg.secrets });
   log('Fetching tasks via Moodle web services...');
-  return { tasks: await fetchActionEvents(client, { from, to }), client };
+  // Two sources: the calendar timeline covers everything with a due date,
+  // while assignments without one have no calendar event and must be read
+  // off the assign module separately.
+  const [dated, undated] = await Promise.all([
+    fetchActionEvents(client, { from, to }),
+    fetchUndatedTasks(client, { log }),
+  ]);
+  return { tasks: [...dated, ...undated], client };
 }
 
 function filterByCourse(tasks, courseFilter) {
@@ -114,6 +122,9 @@ async function verifySubmitted(candidates, client, log) {
     try {
       let mod = entry.modulename && entry.instance ? entry : null;
       if (!mod) {
+        // Only calendar-event ids can be resolved this way; an assign: task
+        // always carries its module info, so reaching here means we can't tell.
+        if (!taskId.startsWith('ws:')) continue;
         const eventId = Number(taskId.slice('ws:'.length));
         if (!Number.isInteger(eventId)) continue;
         mod = await resolveModule(client, eventId);
@@ -258,6 +269,14 @@ async function runDoctor() {
       info.functions.includes(fn)
         ? `✅ ${fn} is available (auto check-off).`
         : `⚠️  ${fn} is NOT exposed – submitted assignments won't be checked off automatically.`,
+    );
+  }
+
+  for (const fn of [FN_TIMELINE_COURSES, FN_ASSIGNMENTS]) {
+    console.log(
+      info.functions.includes(fn)
+        ? `✅ ${fn} is available (tasks without a due date).`
+        : `⚠️  ${fn} is NOT exposed – tasks without a due date won't be listed.`,
     );
   }
 
