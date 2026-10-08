@@ -1,14 +1,18 @@
 import { Chalk } from 'chalk';
 import { taskStatus, sortTasks } from '../model/task.js';
 
+const days = (n) => `${n} ${n === 1 ? 'Tag' : 'Tage'}`;
+
+// The soon/later labels are built from the configured soonDays, so a header
+// can never claim a different cutoff than the one tasks were bucketed by.
 const BUCKET_META = {
-  overdue: { icon: '\u{1F534}', label: 'ÜBERFÄLLIG', color: 'red' },
-  soon: { icon: '\u{1F7E1}', label: 'BALD FÄLLIG (< 3 Tage)', color: 'yellow' },
-  later: { icon: '\u{1F7E2}', label: 'NOCH ZEIT (> 3 Tage)', color: 'green' },
+  overdue: { icon: '\u{1F534}', label: () => 'ÜBERFÄLLIG', color: 'red' },
+  soon: { icon: '\u{1F7E1}', label: (d) => `BALD FÄLLIG (< ${days(d)})`, color: 'yellow' },
+  later: { icon: '\u{1F7E2}', label: (d) => `NOCH ZEIT (> ${days(d)})`, color: 'green' },
   // The variation selector forces emoji presentation, so the icon's string
   // length matches the two columns the terminal actually draws (the other
   // icons are surrogate pairs and already measure as 2).
-  undated: { icon: '⚪️', label: 'OHNE FÄLLIGKEITSDATUM', color: 'gray' },
+  undated: { icon: '⚪️', label: () => 'OHNE FÄLLIGKEITSDATUM', color: 'gray' },
 };
 
 function pad2(n) {
@@ -67,7 +71,7 @@ export function renderTerminal(tasks, { now = new Date(), soonDays = 3, noColor 
         if (currentBucket !== null) lines.push(`║${' '.repeat(width)}║`);
         currentBucket = bucket;
         const meta = BUCKET_META[bucket];
-        const header = c[meta.color].bold(` ${meta.icon} ${meta.label}`);
+        const header = c[meta.color].bold(` ${meta.icon} ${meta.label(soonDays)}`);
         lines.push(`║${padLine(header, width)}║`);
         lines.push(`║${' '.repeat(width)}║`);
       }
