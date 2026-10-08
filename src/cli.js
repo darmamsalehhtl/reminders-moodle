@@ -5,12 +5,14 @@ import { MoodleClient, MoodleError } from './moodle/client.js';
 import { mintToken, promptHidden } from './moodle/auth.js';
 import { getSiteInfo, fetchActionEvents } from './moodle/tasks.js';
 import { fetchUndatedTasks, FN_TIMELINE_COURSES, FN_ASSIGNMENTS } from './moodle/assignments.js';
+import { fetchPersonalEvents, FN_CALENDAR_EVENTS } from './moodle/events.js';
 import { fetchIcalTasks } from './moodle/ical.js';
 import { dedupeTasks, applyIgnore } from './model/task.js';
 import { renderTerminal } from './render/terminal.js';
 import { renderJson } from './render/json.js';
 import { planSync, applySync, applyCompletions } from './reminders/sync.js';
-import { buildView } from './reminders/policy.js';
+import { planEvents } from './reminders/events.js';
+import { buildView, buildEventView } from './reminders/policy.js';
 import { resolveModule, isSubmitted, FN_EVENT_BY_ID, FN_COURSE_MODULE, FN_SUBMISSION_STATUS } from './moodle/submissions.js';
 import { findReminderIds } from './reminders/jxa.js';
 import { loadState, saveState } from './state/store.js';
@@ -30,7 +32,7 @@ function classifyError(err) {
   return EXIT.UNEXPECTED;
 }
 
-async function fetchTasks(cfg, { source, days, log }) {
+async function fetchTasks(cfg, { source, days, log, withEvents = false }) {
   const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   const useIcal = source === 'ical' || (!source && !cfg.token && cfg.icalUrl);
@@ -40,7 +42,9 @@ async function fetchTasks(cfg, { source, days, log }) {
       throw new ConfigError('MOODLE_ICAL_URL is not set. Copy the Moodle calendar export URL into .env, or run --login to use the web service instead.');
     }
     log('Fetching tasks via iCal calendar export...');
-    return { tasks: await fetchIcalTasks(cfg.icalUrl), client: null };
+    // The calendar export cannot tell a personal entry from a course one, so
+    // appointments are web-service only, like the auto check-off.
+    return { tasks: await fetchIcalTasks(cfg.icalUrl), events: [], client: null };
   }
 
   if (!cfg.token) {
@@ -51,11 +55,14 @@ async function fetchTasks(cfg, { source, days, log }) {
   // Two sources: the calendar timeline covers everything with a due date,
   // while assignments without one have no calendar event and must be read
   // off the assign module separately.
-  const [dated, undated] = await Promise.all([
+  // A third source: the user's own appointments. They are not action events,
+  // so neither of the two calls above can see them.
+  const [dated, undated, events] = await Promise.all([
     fetchActionEvents(client, { from, to }),
     fetchUndatedTasks(client, { log }),
+    withEvents ? fetchPersonalEvents(client, { from, to, log }) : Promise.resolve([]),
   ]);
-  return { tasks: [...dated, ...undated], client };
+  return { tasks: [...dated, ...undated], events, client };
 }
 
 function filterByCourse(tasks, courseFilter) {
@@ -68,7 +75,13 @@ async function runFetch(opts) {
   const cfg = loadConfig();
   const log = opts.json ? (...args) => console.error(...args) : (...args) => console.log(...args);
 
-  const fetched = await fetchTasks(cfg, { source: opts.source, days: opts.days ?? cfg.lookaheadDays, log });
+  const withEvents = opts.events !== false && cfg.events;
+  const fetched = await fetchTasks(cfg, {
+    source: opts.source,
+    days: opts.days ?? cfg.lookaheadDays,
+    log,
+    withEvents,
+  });
   const client = fetched.client;
   let tasks = dedupeTasks(fetched.tasks);
   // Ids of the whole feed, before --course filtering: a task hidden by the
@@ -79,12 +92,16 @@ async function runFetch(opts) {
   tasks = applyIgnore(tasks, { courses: cfg.ignoreCourses, titles: cfg.ignoreTitles });
   tasks = filterByCourse(tasks, opts.course);
 
+  // An appointment belongs to no course, so only the title list can hide one;
+  // IGNORE_COURSES and --course never apply to them.
+  let events = applyIgnore(dedupeTasks(fetched.events ?? []), { titles: cfg.ignoreTitles });
+
   const soonDays = cfg.soonDays;
 
   if (opts.json) {
-    console.log(renderJson(tasks, { soonDays }));
+    console.log(renderJson(tasks, { soonDays, events }));
   } else {
-    console.log(renderTerminal(tasks, { soonDays, noColor: opts.color === false }));
+    console.log(renderTerminal(tasks, { soonDays, noColor: opts.color === false, events }));
   }
 
   const shouldSync = opts.sync !== false && process.platform === 'darwin';
@@ -93,7 +110,7 @@ async function runFetch(opts) {
     // authorized, ...) must never turn a successful task fetch into a
     // failed run - it's reported and the process still exits 0.
     try {
-      await syncReminders(tasks, cfg, { dryRun: opts.dryRun, log, client, feedIds });
+      await syncReminders(tasks, cfg, { dryRun: opts.dryRun, log, client, feedIds, events });
     } catch (err) {
       log(`Reminders-Sync fehlgeschlagen: ${err.message}`);
     }
@@ -144,7 +161,51 @@ async function verifySubmitted(candidates, client, log) {
   return verified;
 }
 
-async function syncReminders(tasks, cfg, { dryRun, log, client, feedIds }) {
+/**
+ * Second sync pass: the appointments list. Deliberately a separate pass with
+ * its own findReminderIds() result - comparing an event reminder against the
+ * assignments list would make every one of them look deleted by the user.
+ * Shares the one state object so a single atomic save covers both passes.
+ */
+async function syncEvents(events, cfg, { dryRun, log, state, now }) {
+  const listName = cfg.remindersEventsList;
+  let existingReminderIds;
+  try {
+    existingReminderIds = new Set(await findReminderIds(listName));
+  } catch {
+    existingReminderIds = undefined;
+  }
+  const decorate = (event) =>
+    buildEventView(event, { now, soonDays: cfg.soonDays, leadHours: cfg.eventAlarmLeadHours });
+  const plan = planEvents(events, state, { existingReminderIds, decorate, now });
+
+  if (dryRun) {
+    log(
+      `[dry-run] Termine: würde ${plan.create.length} erstellen, ${plan.update.length} aktualisieren, ` +
+        `${plan.complete.length} abhaken, ${plan.skip.length} überspringen (Liste "${listName}").`,
+    );
+    for (const e of plan.create) log(`  + Termin anlegen: ${e.title}`);
+    for (const { task } of plan.update) log(`  ~ Termin aktualisieren: ${task.title}`);
+    for (const { entry, taskId } of plan.complete) log(`  ✓ Termin abhaken: ${entry.title ?? taskId}`);
+    return { state, created: [], completed: [], errors: [] };
+  }
+
+  // Only conjure the list into the user's app once there is something to put
+  // in it; a run with no appointments must not create an empty list.
+  const hasWork = plan.create.length > 0 || plan.update.length > 0 || plan.complete.length > 0;
+  if (!hasWork) return { state, created: [], completed: [], errors: [] };
+
+  const result = await applySync(plan, { listName, state, decorate });
+  const done = await applyCompletions(plan.complete, { state: result.state });
+  return {
+    state: done.state,
+    created: result.created,
+    completed: done.completed,
+    errors: [...result.errors, ...done.errors],
+  };
+}
+
+async function syncReminders(tasks, cfg, { dryRun, log, client, feedIds, events = [] }) {
   const state = await loadState();
   // Existing reminder ids tell the planner which of *our* previously
   // synced reminders the user deleted on purpose (see reminders/sync.js);
@@ -176,12 +237,17 @@ async function syncReminders(tasks, cfg, { dryRun, log, client, feedIds }) {
     for (const { task } of plan.update) log(`  ~ update: ${task.title}`);
     for (const { entry, taskId } of verified) log(`  ✓ complete: ${entry.title ?? taskId}`);
     for (const { task } of plan.reopen) log(`  ↺ reopen: ${task.title}`);
+    if (events.length > 0) await syncEvents(events, cfg, { dryRun, log, state, now });
     return;
   }
 
   const result = await applySync(plan, { listName: cfg.remindersList, state, decorate });
   const done = await applyCompletions(verified, { state: result.state });
-  await saveState(done.state);
+
+  const ev = events.length > 0
+    ? await syncEvents(events, cfg, { dryRun, log, state: done.state, now })
+    : { state: done.state, created: [], completed: [], errors: [] };
+  await saveState(ev.state);
   if (result.created.length > 0) {
     log(`Zu Reminders hinzugefügt: ${result.created.map((t) => t.title).join(', ')}`);
     await notify(`${result.created.length} neue Aufgabe(n) zu "${cfg.remindersList}" hinzugefügt`);
@@ -193,7 +259,14 @@ async function syncReminders(tasks, cfg, { dryRun, log, client, feedIds }) {
   if (result.reopened.length > 0) {
     log(`Wieder geöffnet (Abgabe zurückgezogen): ${result.reopened.map((t) => t.title).join(', ')}`);
   }
-  for (const e of [...result.errors, ...done.errors]) log(`Reminders-Fehler: ${e.message}`);
+  if (ev.created.length > 0) {
+    log(`Termine hinzugefügt: ${ev.created.map((t) => t.title).join(', ')}`);
+    await notify(`${ev.created.length} neue(r) Termin(e) zu "${cfg.remindersEventsList}" hinzugefügt`);
+  }
+  if (ev.completed.length > 0) {
+    log(`Vergangene Termine abgehakt: ${ev.completed.map((t) => t.title).join(', ')}`);
+  }
+  for (const e of [...result.errors, ...done.errors, ...ev.errors]) log(`Reminders-Fehler: ${e.message}`);
 }
 
 async function runLogin() {
@@ -280,6 +353,12 @@ async function runDoctor() {
     );
   }
 
+  console.log(
+    info.functions.includes(FN_CALENDAR_EVENTS)
+      ? `✅ ${FN_CALENDAR_EVENTS} is available (your own appointments).`
+      : `⚠️  ${FN_CALENDAR_EVENTS} is NOT exposed – your own appointments won't be synced.`,
+  );
+
   if (process.platform === 'darwin') {
     console.log('✅ Running on macOS – Reminders sync available.');
   } else {
@@ -301,6 +380,7 @@ export function buildProgram() {
     .option('--dry-run', 'print the reminder sync plan without changing anything')
     .option('--no-color', 'disable colored output')
     .option('--no-digest', 'do not show the summary notification after syncing')
+    .option('--no-events', 'do not sync your own Moodle calendar appointments')
     .option('--login', 'interactively mint a new web service token')
     .option('--status', 'show what has been synced, ticked off or deleted')
     .option('--doctor', 'run connectivity/token/permission diagnostics')
