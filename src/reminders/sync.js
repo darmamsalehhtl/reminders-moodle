@@ -157,7 +157,9 @@ export async function applySync(plan, { listName, state, decorate }) {
 
   for (const task of plan.deletedByUser) {
     // Keep the state entry so we remember not to recreate it, but mark it.
-    if (nextTasks[task.id]) nextTasks[task.id].deletedByUser = true;
+    // Written as a fresh object: `nextTasks` is a shallow copy, so mutating
+    // the entry in place would write through into the caller's state.
+    if (nextTasks[task.id]) nextTasks[task.id] = { ...nextTasks[task.id], deletedByUser: true };
   }
 
   return { state: { ...state, tasks: nextTasks }, created, reopened, errors };
