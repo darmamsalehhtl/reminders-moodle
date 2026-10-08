@@ -44,6 +44,21 @@ function flag(value, def) {
   return !['0', 'false', 'no', 'off'].includes(String(value).toLowerCase());
 }
 
+/**
+ * Parses a numeric env value, falling back to `def` when unset. Throws for
+ * anything that isn't a non-negative finite number, so a typo surfaces as a
+ * config error instead of a silent NaN that makes every date comparison
+ * false and quietly mis-buckets every task.
+ */
+function number(name, value, def) {
+  if (value === undefined || value === '') return def;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new ConfigError(`${name} must be a non-negative number: "${value}"`);
+  }
+  return n;
+}
+
 /** Splits a comma-separated env value into trimmed, non-empty entries. */
 function list(value) {
   return (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -84,13 +99,10 @@ export function loadConfig({ envPath, env = process.env } = {}) {
     throw new ConfigError(`MOODLE_USER_ID must be an integer: "${e.MOODLE_USER_ID}"`);
   }
 
-  const soonDays = e.SOON_DAYS ? Number(e.SOON_DAYS) : 3;
-  const lookaheadDays = e.LOOKAHEAD_DAYS ? Number(e.LOOKAHEAD_DAYS) : 30;
+  const soonDays = number('SOON_DAYS', e.SOON_DAYS, 3);
+  const lookaheadDays = number('LOOKAHEAD_DAYS', e.LOOKAHEAD_DAYS, 30);
   const remindersList = e.REMINDERS_LIST || 'Schulaufgaben';
-  const alarmLeadHours = e.ALARM_LEAD_HOURS ? Number(e.ALARM_LEAD_HOURS) : 24;
-  if (!Number.isFinite(alarmLeadHours) || alarmLeadHours < 0) {
-    throw new ConfigError(`ALARM_LEAD_HOURS must be a non-negative number: "${e.ALARM_LEAD_HOURS}"`);
-  }
+  const alarmLeadHours = number('ALARM_LEAD_HOURS', e.ALARM_LEAD_HOURS, 24);
   const coursePrefix = flag(e.COURSE_PREFIX, true);
   const digest = flag(e.DIGEST, true);
   const ignoreCourses = list(e.IGNORE_COURSES);
