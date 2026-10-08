@@ -127,6 +127,42 @@ or quick testing, but only runs while that process stays alive - it does
 **not** survive closing the terminal, so it isn't the recommended path on
 macOS.
 
+## Your own appointments
+
+Beside assignments, the tool syncs the appointments you entered yourself in
+Moodle's calendar (Kalender → **Neuer Termin**, type *Benutzer*). Moodle's
+timeline API can't see them — they require no action — so they are read
+separately and kept in **their own Reminders list**, `Schultermine` by
+default:
+
+```bash
+# appointments are synced along with assignments by default
+node bin/moodle-tasks.js
+
+# assignments only
+node bin/moodle-tasks.js --no-events
+```
+
+- An appointment's reminder is due at its **start time**, not a deadline, and
+  is alarmed `EVENT_ALARM_LEAD_HOURS` (default 1) before it begins. An
+  all-day appointment gets a date without a time and is alarmed at 08:00 on
+  the day itself.
+- **Once an appointment is over, its reminder is ticked off** on the next run.
+  An all-day appointment counts as over at the end of its day, and an
+  appointment that is already past when first seen gets no reminder at all.
+- If an appointment **vanishes** from Moodle, its reminder is left open rather
+  than silently completed — same rule as for assignments, where only a
+  confirmed submission ticks something off.
+- `IGNORE_TITLES` hides appointments too; `IGNORE_COURSES` and `--course`
+  don't apply, since an appointment belongs to no course.
+- Needs the web service source. The iCal export can't tell a personal entry
+  from a course one, so `--source ical` syncs assignments only. `--doctor`
+  shows whether `core_calendar_get_calendar_events` is available to your
+  token.
+
+Options: `EVENTS=0` turns the whole thing off, `REMINDERS_EVENTS_LIST`
+renames the list, `EVENT_ALARM_LEAD_HOURS` sets the lead time.
+
 ## macOS permissions (Reminders)
 
 The first time this tool creates or updates a reminder, macOS will ask you
@@ -155,10 +191,12 @@ npm test          # runs the unit test suite (node:test, no framework)
 ```
 
 Test coverage: task status/sort/dedupe logic, the Reminders sync planner's
-create/update/skip/deleted-by-user branches, the REST client's retry and
-error-mapping behavior, the action-events normalizer (with pagination), and
-the iCal fallback parser (folded lines, CRLF, escapes, all-day events,
-TZID). The Reminders/AppleScript bridge itself isn't unit tested (it needs
+create/update/skip/deleted-by-user branches, the appointment planner's
+complete/vanished/prefix-scoping branches, the alarm and priority policy for
+both kinds, config validation, the REST client's retry and error-mapping
+behavior, the action-events and appointment normalizers (with pagination and
+the all-day heuristic), the terminal and JSON renderers, and the iCal
+fallback parser (folded lines, CRLF, escapes, all-day events, TZID). The Reminders/AppleScript bridge itself isn't unit tested (it needs
 the real app) - use `--dry-run` to check its plan without side effects.
 
 ## Project layout
@@ -175,8 +213,10 @@ src/moodle/ical.js         fallback: parse a Moodle calendar export URL
 src/model/task.js          the shared Task shape, status buckets, sorting
 src/render/terminal.js     boxed terminal output
 src/render/json.js         --json output
+src/moodle/events.js       fetch + normalize your own calendar appointments
 src/reminders/jxa.js       JXA bridge to Reminders.app (list/create/update)
 src/reminders/sync.js      pure create/update/skip/deleted-by-user planner
+src/reminders/events.js    pure planner for appointments (own completion rule)
 src/reminders/policy.js    alarm time, priority and title prefix rules
 src/state/store.js         atomic JSON state file for dedupe tracking
 src/notify.js              macOS notification banner
