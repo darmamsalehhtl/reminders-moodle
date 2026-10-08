@@ -25,6 +25,7 @@ function normalizeEvent(event) {
   const due = toDate(event.timesort);
   return {
     id: stableId('ws', { eventId: event.id, title: event.name, course, due }),
+    kind: 'task',
     source: 'ws',
     title: event.name,
     course,

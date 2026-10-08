@@ -43,6 +43,7 @@ function normalizeAssignment({ assign, courseName }, moodleUrl) {
     // Deliberately not the `ws:` prefix used for calendar events: those ids
     // are event ids and the completion check resolves them as such.
     id: `assign:${assign.id}`,
+    kind: 'task',
     source: 'ws',
     title: assign.name,
     course: courseName,

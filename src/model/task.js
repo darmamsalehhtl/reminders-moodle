@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto';
 /**
  * @typedef {Object} Task
  * @property {string} id           stable dedupe key, see stableId()
+ * @property {'task'|'event'} kind what the item is: something to hand in, or
+ *                                 an appointment to be at. Decides which
+ *                                 planner and which Reminders list it belongs
+ *                                 to, see reminders/events.js.
  * @property {'ws'|'ical'} source
  * @property {string} title
  * @property {string|null} course  null when the source couldn't determine it

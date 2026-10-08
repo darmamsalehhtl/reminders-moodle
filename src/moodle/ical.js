@@ -128,6 +128,7 @@ function eventToTask(event) {
 
   return {
     id: event.uid ? `ical:${event.uid}` : stableId('ical', { title: summary, course, due }),
+    kind: 'task',
     source: 'ical',
     title: summary,
     course,
