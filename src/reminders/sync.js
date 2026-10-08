@@ -69,7 +69,9 @@ export function planSync(tasks, state, { existingReminderIds, feedIds, decorate 
   }
 
   for (const [taskId, entry] of Object.entries(state.tasks)) {
-    if (!taskId.startsWith('ws:')) continue;
+    // iCal gives us no way to query a submission, so those can never be
+    // verified; calendar-event (ws:) and assignment (assign:) tasks can.
+    if (taskId.startsWith('ical:')) continue;
     if (inFeed.has(taskId) || entry.deletedByUser || entry.completedAt) continue;
     if (existingReminderIds && !existingReminderIds.has(entry.reminderId)) continue;
     completionCandidates.push({ taskId, entry });
@@ -109,6 +111,9 @@ export async function applySync(plan, { listName, state, decorate }) {
         syncedAt: new Date().toISOString(),
         title: task.title,
         ...(view && { sig: view.sig }),
+        // Carried so the completion check can verify the task without
+        // resolving a calendar event (undated tasks have none).
+        ...(task.modulename && task.instance && { modulename: task.modulename, instance: task.instance }),
       };
       created.push(task);
     } catch (err) {
